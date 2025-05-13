@@ -1,14 +1,9 @@
-use crate::pump_amm_idl;
 use crate::pump_amm_idl::client::accounts::Buy;
+use crate::{coin_creator_vault_ata, coin_creator_vault_authority, pump_amm_idl, wsol};
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::{InstructionData, ToAccountMetas};
 use solana_program::instruction::Instruction;
 use spl_associated_token_account::get_associated_token_address;
-
-
-mod wsol {
-    solana_program::declare_id!("So11111111111111111111111111111111111111112");
-}
 
 const GLOBAL_CONFIG: Pubkey =
     Pubkey::from_str_const("ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw");
@@ -40,6 +35,21 @@ pub struct SellOption {
     pub min_quote_amount_out: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AdditionalAccounts {
+    pub coin_creator: Pubkey,
+}
+
+impl AdditionalAccounts {
+    pub fn coin_creator_vault_authority_ata(&self) -> (Pubkey, Pubkey) {
+        let creator_vault_ata = coin_creator_vault_ata(self.coin_creator);
+
+        let creator_vault_authority = coin_creator_vault_authority(self.coin_creator);
+
+        (creator_vault_ata, creator_vault_authority)
+    }
+}
+
 fn create_ata_token_account_instr(
     token_program: Pubkey,
     mint: &Pubkey,
@@ -61,10 +71,14 @@ pub fn sell_instruction(
     sell_option: &SellOption,
     mint: &Pubkey,
     signer: &Pubkey,
+    additional_accounts: AdditionalAccounts,
 ) -> Instruction {
     let associated_token_address = get_associated_token_address(signer, mint);
 
     let associated_quote_address = get_associated_token_address(signer, &wsol::id());
+
+    let (coin_creator_vault_ata, coin_creator_vault_authority) =
+        additional_accounts.coin_creator_vault_authority_ata();
 
     let sell_account_meta = pump_amm_idl::client::accounts::Sell {
         pool: pool.pool,
@@ -84,6 +98,8 @@ pub fn sell_instruction(
         associated_token_program: spl_associated_token_account::id(),
         event_authority: EVENT_AUTHORITY,
         program: pump_amm_idl::ID,
+        coin_creator_vault_ata,
+        coin_creator_vault_authority,
     }
     .to_account_metas(None);
 
@@ -104,6 +120,7 @@ pub fn buy_instruction(
     option: &BuyOption,
     mint: &Pubkey,
     signer: &Pubkey,
+    additional_accounts: AdditionalAccounts,
 ) -> Vec<Instruction> {
     let associated_token_address = get_associated_token_address(signer, mint);
 
@@ -119,6 +136,9 @@ pub fn buy_instruction(
     //     &wsol::id(),
     //     &signer,
     // );
+
+    let (coin_creator_vault_ata, coin_creator_vault_authority) =
+        additional_accounts.coin_creator_vault_authority_ata();
 
     let buy_account_meta = pump_amm_idl::client::accounts::Buy::from(Buy {
         pool: pool.pool,
@@ -138,6 +158,8 @@ pub fn buy_instruction(
         associated_token_program: spl_associated_token_account::id(),
         event_authority: EVENT_AUTHORITY,
         program: pump_amm_idl::ID,
+        coin_creator_vault_ata,
+        coin_creator_vault_authority,
     })
     .to_account_metas(None);
 
